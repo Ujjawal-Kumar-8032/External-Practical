@@ -1,0 +1,124 @@
+import java.sql.*;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
+
+public class EmployeeJdbcPolymorphismExample {
+
+    private static final String DB_URL = "jdbc:mysql://localhost:3306/your_database_name?useSSL=false&serverTimezone=UTC";
+    private static final String DB_USER = "your_db_user";
+    private static final String DB_PASS = "your_db_password";
+
+    public static void main(String[] args) {
+        List<Employee> employees = fetchEmployees();
+        for (Employee e : employees) {
+            e.printDetails();
+            System.out.println("Net pay: " + e.calculatePay());
+            System.out.println("-------------------------------");
+        }
+    }
+
+    private static List<Employee> fetchEmployees() {
+        List<Employee> results = new ArrayList<>();
+        String sql = "SELECT id, name, type, base_salary, hourly_rate, hours_worked FROM employees";
+
+        try {
+            Class.forName("com.mysql.cj.jdbc.Driver");
+        } catch (ClassNotFoundException ex) {
+            System.err.println("JDBC Driver not found.");
+        }
+
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS);
+             PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+
+            while (rs.next()) {
+                int id = rs.getInt("id");
+                String name = rs.getString("name");
+                String type = rs.getString("type");
+
+                BigDecimal baseSalary = rs.getBigDecimal("base_salary");
+                BigDecimal hourlyRate = rs.getBigDecimal("hourly_rate");
+                int hoursWorked = rs.getInt("hours_worked");
+
+                Employee emp;
+                if ("FULLTIME".equalsIgnoreCase(type)) {
+                    emp = new FullTimeEmployee(id, name, baseSalary == null ? BigDecimal.ZERO : baseSalary);
+                } else if ("CONTRACT".equalsIgnoreCase(type)) {
+                    emp = new ContractEmployee(id, name,
+                            hourlyRate == null ? BigDecimal.ZERO : hourlyRate,
+                            hoursWorked);
+                } else {
+                    emp = new Employee(id, name);
+                }
+                results.add(emp);
+            }
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+
+        return results;
+    }
+}
+
+class Employee {
+    protected int id;
+    protected String name;
+
+    public Employee(int id, String name) {
+        this.id = id;
+        this.name = name;
+    }
+
+    public void printDetails() {
+        System.out.println("Employee [id=" + id + ", name=" + name + "]");
+    }
+
+    public BigDecimal calculatePay() {
+        return BigDecimal.ZERO;
+    }
+}
+
+class FullTimeEmployee extends Employee {
+    private BigDecimal baseSalary;
+
+    public FullTimeEmployee(int id, String name, BigDecimal baseSalary) {
+        super(id, name);
+        this.baseSalary = baseSalary;
+    }
+
+    @Override
+    public void printDetails() {
+        System.out.println("FullTimeEmployee [id=" + id + ", name=" + name + ", baseSalary=" + baseSalary + "]");
+    }
+
+    @Override
+    public BigDecimal calculatePay() {
+        if (baseSalary == null) return BigDecimal.ZERO;
+        return baseSalary.divide(BigDecimal.valueOf(12), 2, BigDecimal.ROUND_HALF_UP);
+    }
+}
+
+class ContractEmployee extends Employee {
+    private BigDecimal hourlyRate;
+    private int hoursWorked;
+
+    public ContractEmployee(int id, String name, BigDecimal hourlyRate, int hoursWorked) {
+        super(id, name);
+        this.hourlyRate = hourlyRate;
+        this.hoursWorked = hoursWorked;
+    }
+
+    @Override
+    public void printDetails() {
+        System.out.println("ContractEmployee [id=" + id + ", name=" + name +
+                ", hourlyRate=" + hourlyRate + ", hoursWorked=" + hoursWorked + "]");
+    }
+
+    @Override
+    public BigDecimal calculatePay() {
+        if (hourlyRate == null) return BigDecimal.ZERO;
+        return hourlyRate.multiply(BigDecimal.valueOf(hoursWorked));
+    }
+}
